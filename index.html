@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaderboard 500km Challenge 2025</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        .leaderboard-container {
+            max-width: 800px;
+            margin: auto;
+            border-radius: 10px;
+            padding: 20px;
+            background: #222;
+        }
+        .leaderboard-header {
+            background: linear-gradient(to right, #6a11cb, #2575fc);
+            padding: 15px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 8px;
+        }
+        .table {
+            margin-top: 20px;
+            background: #333;
+            color: #fff;
+        }
+        .table th, .table td {
+            text-align: center;
+        }
+        .last-update {
+            text-align: center;
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="leaderboard-container">
+        <div class="leaderboard-header">🏆 Leaderboard Challenge Run 500Km 2025 🏆</div>
+        <div class="last-update">Last Update: {{ last_update }}</div>
+        <table class="table table-dark table-striped">
+            <thead>
+                <tr>
+                    <th>No</th>
+                    <th>Athlete</th>
+                    <th>Activities</th>
+                    <th>Distance (Km)</th>
+                    <th>Moving Time (H)</th>
+                    <th>Elevation Gain (m)</th>
+                    <th>Avg. Pace</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in tables %}
+                <tr>
+                    <td>
+                        {% if loop.index == 1 %}
+                            🥇
+                        {% elif loop.index == 2 %}
+                            🥈
+                        {% elif loop.index == 3 %}
+                            🥉
+                        {% else %}
+                            {{ loop.index }}
+                        {% endif %}
+                    </td>
+                    <td>{{ row["athlete_name"] }}</td>
+                    <td>{{ row["total_activities"] }}</td>
+                    <td>{{ "%.2f"|format(row["distance"]) }}</td>
+                    <td>{{ "%.2f"|format(row["moving_time"]) }}</td>
+                    <td>{{ "%.1f"|format(row["total_elevation_gain"]) }}</td>
+                    <td>{{ row["avg_pace"] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
+
