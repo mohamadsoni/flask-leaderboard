@@ -73,7 +73,7 @@ def get_leaderboard():
         # **Ambil data peserta (Firstname + Lastname)**
         if 'athlete' in df.columns:
             df['athlete_name'] = df['athlete'].apply(
-                lambda x: f"{x['firstname']} {x['lastname']}." if isinstance(x, dict) and 'firstname' in x and 'lastname' in x else 'Unknown'
+                lambda x: f"{x['firstname']} {x['lastname'][0]}." if isinstance(x, dict) and 'firstname' in x and 'lastname' in x else 'Unknown'
             )
         
         # **Pilih Kolom yang Dibutuhkan**
