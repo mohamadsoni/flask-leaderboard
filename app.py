@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import time
 import os
+import logging
 from flask import Flask, render_template
 from datetime import datetime
 
@@ -13,6 +14,9 @@ CLIENT_SECRET = "6281b45348ab44737877ebed01117c46ab0068f1"
 REFRESH_TOKEN = "a99f8df8611688ddf512a6b44a7ec0a3570116ee"
 ACCESS_TOKEN = None
 EXPIRES_AT = 0
+
+# Setup Logging
+logging.basicConfig(level=logging.DEBUG)
 
 # **Function untuk Refresh Token Otomatis**
 def refresh_access_token():
@@ -106,13 +110,22 @@ def get_leaderboard():
 # **Route Utama**
 @app.route('/')
 def index():
+  try:
+    # Log setiap request yang masuk
+    app.logger.info("Processing request for /")
+
+    # Panggil fungsi leaderboard
     leaderboard, last_update = get_leaderboard()
+
     if not leaderboard:
         return "<h2>No data available for the selected period.</h2>"
 
     return render_template('index.html', tables=leaderboard, last_update=last_update)
+  except Exception as e:
+    app.logger.error(f"Internal Server Error: {e}") #log error di raikway
+    return f"<h2>Internal Server Error: {str(e)}</h2>"
 
 # **Menjalankan Flask App**
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))  # Pastikan pakai port 8080
-    app.run(host="0.0.0.0", port=port)  # Harus binding ke 0.0.0.0
+    app.run(host="0.0.0.0", port=port, debug=True)  # Harus binding ke 0.0.0.0
