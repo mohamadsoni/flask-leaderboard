@@ -30,9 +30,14 @@
             margin-top: 20px;
             background: #333;
             color: #fff;
+            table-layout: auto;  /* Biarkan tabel menyesuaikan lebarnya */
+            width: 100%;
         }
         .table th, .table td {
             text-align: center;
+            white-space: nowrap;  /* Mencegah pemotongan teks */
+            overflow: visible;     /* Pastikan teks tidak terpotong */
+            text-overflow: unset;  /* Hapus elipsis */
         }
         .last-update {
             text-align: center;
