@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import os
 import logging
+import requests
 from flask import Flask, render_template
 from datetime import datetime
 
@@ -66,9 +67,9 @@ def get_leaderboard():
 
         df = pd.DataFrame(activities)
 
-        # **Filter hanya aktivitas lari (Run)**
+        # **Filter hanya aktivitas lari (Run), Walk, & Virtual Run**
         if 'sport_type' in df.columns:
-            df = df[df['sport_type'] == 'Run']
+                df = df[df['sport_type'].isin(['Run', 'Walk', 'VirtualRun'])]  # Tambahkan virtual run
 
         # **Ambil data peserta (Firstname + Lastname)**
         if 'athlete' in df.columns:
