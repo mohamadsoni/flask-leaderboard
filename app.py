@@ -3,13 +3,12 @@ import pandas as pd
 import time
 import os
 import logging
-import requests
 from flask import Flask, render_template
 from datetime import datetime
 
 app = Flask(__name__)
 
-# **Strava API Credentials** (Ganti dengan data API Strava kamu)
+# **Strava API Credentials** (Ganti dengan API Strava kamu)
 CLIENT_ID = "150348"
 CLIENT_SECRET = "6281b45348ab44737877ebed01117c46ab0068f1"
 REFRESH_TOKEN = "a99f8df8611688ddf512a6b44a7ec0a3570116ee"
@@ -46,6 +45,25 @@ def refresh_access_token():
 
     return ACCESS_TOKEN
 
+# **Function untuk Ambil Daftar Semua Peserta dari API Strava (Pagination)**
+def get_all_participants():
+    all_athletes = []
+    page = 1
+    while True:
+        url = f"https://www.strava.com/api/v3/clubs/1415067/members?page={page}&per_page=200"
+        headers = {"Authorization": f"Bearer {refresh_access_token()}"}
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            athletes = response.json()
+            if not athletes:
+                break  # Hentikan jika tidak ada data lagi
+            all_athletes.extend([f"{athlete['firstname']} {athlete['lastname']}" for athlete in athletes])
+            page += 1
+        else:
+            break
+    return all_athletes
+
 # **Function untuk Ambil Data Leaderboard**
 def get_leaderboard():
     try:
@@ -57,7 +75,7 @@ def get_leaderboard():
         headers = {"Authorization": f"Bearer {token}"}
         params = {"after": 1740787200, "page": 1, "per_page": 200}
 
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers)
         if response.status_code != 200:
             return pd.DataFrame()
 
@@ -67,16 +85,16 @@ def get_leaderboard():
 
         df = pd.DataFrame(activities)
 
-        # **Filter hanya aktivitas lari (Run), Walk, & Virtual Run**
+        # **Filter hanya aktivitas Run, Walk, & Virtual Run**
         if 'sport_type' in df.columns:
-                df = df[df['sport_type'].isin(['Run', 'Walk', 'VirtualRun'])]  # Tambahkan virtual run
+            df = df[df['sport_type'].isin(['Run', 'Walk', 'VirtualRun'])]
 
         # **Ambil data peserta (Firstname + Lastname)**
         if 'athlete' in df.columns:
             df['athlete_name'] = df['athlete'].apply(
-                lambda x: f"{x['firstname']} {x['lastname'][0]}." if isinstance(x, dict) and 'firstname' in x and 'lastname' in x else 'Unknown'
+                lambda x: f"{x['firstname']} {x['lastname']}" if isinstance(x, dict) and 'firstname' in x and 'lastname' in x else 'Unknown'
             )
-        
+
         # **Pilih Kolom yang Dibutuhkan**
         df = df[['athlete_name', 'distance', 'moving_time', 'total_elevation_gain']]
 
@@ -92,17 +110,26 @@ def get_leaderboard():
             total_elevation_gain=('total_elevation_gain', 'sum')
         ).reset_index()
 
+        # **Tambahkan peserta yang belum memiliki aktivitas**
+        all_participants = pd.DataFrame(get_all_participants(), columns=["athlete_name"])
+        leaderboard_march = all_participants.merge(leaderboard, on='athlete_name', how='outer')
+        leaderboard_march.fillna({'total_activities': 0, 'distance': 0, 'moving_time': 0, 'total_elevation_gain': 0, 'avg_pace': '-'}, inplace=True)
+
         # **Sorting berdasarkan Distance (Descending)**
-        leaderboard = leaderboard.sort_values(by="distance", ascending=False).reset_index(drop=True)
+        leaderboard_march['total_activities'] = leaderboard_march['total_activities'].astype(int)
+        leaderboard_march = leaderboard_march.sort_values(by="distance", ascending=False).reset_index(drop=True)
 
         # **Hitung Average Pace (menit/km)**
-        leaderboard['avg_pace'] = (leaderboard['moving_time'] * 60) / leaderboard['distance']
-        leaderboard['avg_pace'] = leaderboard['avg_pace'].apply(lambda x: f"{int(x)}:{int((x - int(x)) * 60):02d} min/km" if x > 0 else "--")
+        leaderboard_march['avg_pace'] = (leaderboard_march['moving_time'] * 60) / leaderboard_march['distance']
+        leaderboard_march['avg_pace'] = leaderboard_march['avg_pace'].apply(lambda x: f"{int(x)}:{int((x - int(x)) * 60):02d} min/km" if x > 0 else "--")
 
         # **Tambahkan Waktu Update Data**
         last_update = datetime.now().strftime("%d %B %Y, %H:%M:%S")
 
-        return leaderboard.to_dict(orient='records'), last_update
+        # **Cek apakah semua peserta muncul**
+        print(f"\n👥 Total Member Seharusnya: 37, Yang Muncul di Leaderboard: {len(leaderboard_march)}")
+
+        return leaderboard_march.to_dict(orient='records'), last_update
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
@@ -111,20 +138,20 @@ def get_leaderboard():
 # **Route Utama**
 @app.route('/')
 def index():
-  try:
-    # Log setiap request yang masuk
-    app.logger.info("Processing request for /")
+    try:
+        # Log setiap request yang masuk
+        app.logger.info("Processing request for /")
 
-    # Panggil fungsi leaderboard
-    leaderboard, last_update = get_leaderboard()
+        # Panggil fungsi leaderboard
+        leaderboard, last_update = get_leaderboard()
 
-    if not leaderboard:
-        return "<h2>No data available for the selected period.</h2>"
+        if not leaderboard:
+            return "<h2>No data available for the selected period.</h2>"
 
-    return render_template('index.html', tables=leaderboard, last_update=last_update)
-  except Exception as e:
-    app.logger.error(f"Internal Server Error: {e}") #log error di raikway
-    return f"<h2>Internal Server Error: {str(e)}</h2>"
+        return render_template('index.html', tables=leaderboard, last_update=last_update)
+    except Exception as e:
+        app.logger.error(f"Internal Server Error: {e}")  # Log error di Railway
+        return f"<h2>Internal Server Error: {str(e)}</h2>"
 
 # **Menjalankan Flask App**
 if __name__ == '__main__':
