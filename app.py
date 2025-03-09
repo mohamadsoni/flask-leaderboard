@@ -4,7 +4,7 @@ import time
 import os
 import logging
 from flask import Flask, render_template
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -15,10 +15,14 @@ REFRESH_TOKEN = "a99f8df8611688ddf512a6b44a7ec0a3570116ee"
 ACCESS_TOKEN = None
 EXPIRES_AT = 0
 
-# Setup Logging
+# **Setup Logging**
 logging.basicConfig(level=logging.DEBUG)
 
-# **Function untuk Refresh Token Otomatis**
+# **Tanggal Filter (1 Maret 2025)**
+START_DATE = datetime(2025, 3, 1)
+START_TIMESTAMP = int(START_DATE.timestamp())  # Konversi ke epoch time
+
+# **Function untuk Refresh Token**
 def refresh_access_token():
     global ACCESS_TOKEN, EXPIRES_AT, REFRESH_TOKEN
 
@@ -45,25 +49,6 @@ def refresh_access_token():
 
     return ACCESS_TOKEN
 
-# **Function untuk Ambil Daftar Semua Peserta dari API Strava (Pagination)**
-def get_all_participants():
-    all_athletes = []
-    page = 1
-    while True:
-        url = f"https://www.strava.com/api/v3/clubs/1415067/members?page={page}&per_page=200"
-        headers = {"Authorization": f"Bearer {refresh_access_token()}"}
-        response = requests.get(url, headers=headers)
-
-        if response.status_code == 200:
-            athletes = response.json()
-            if not athletes:
-                break  # Hentikan jika tidak ada data lagi
-            all_athletes.extend([f"{athlete['firstname']} {athlete['lastname']}" for athlete in athletes])
-            page += 1
-        else:
-            break
-    return all_athletes
-
 # **Function untuk Ambil Data Leaderboard**
 def get_leaderboard():
     try:
@@ -71,19 +56,43 @@ def get_leaderboard():
         if not token:
             return pd.DataFrame()
 
-        url = "https://www.strava.com/api/v3/clubs/1415067/activities"
-        headers = {"Authorization": f"Bearer {token}"}
-        params = {"after": 1740787200, "page": 1, "per_page": 200}
+        all_activities = []
+        page = 1
+        max_pages = 10  # Batas maksimum pengambilan data agar tidak infinite loop
+        last_data_length = 0  # Untuk cek apakah data berubah
 
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
+        while page <= max_pages:
+            url = f"https://www.strava.com/api/v3/clubs/1415067/activities"
+            headers = {"Authorization": f"Bearer {token}"}
+            params = {"after": START_TIMESTAMP, "page": page, "per_page": 200}
+
+            response = requests.get(url, headers=headers, params=params)
+            if response.status_code != 200:
+                break  # Hentikan jika gagal mengambil data
+
+            activities = response.json()
+            if not activities:
+                print(f"✅ Page {page}: Tidak ada aktivitas baru, berhenti fetching.")
+                break  # Hentikan jika API tidak mengembalikan aktivitas
+
+            # **Cek apakah data sudah sama seperti sebelumnya (duplikasi)**
+            if len(activities) == last_data_length:
+                print(f"⚠️ Page {page}: Data tidak bertambah, berhenti fetching.")
+                break
+
+            all_activities.extend(activities)
+            last_data_length = len(activities)  # Simpan jumlah terakhir
+            print(f"📊 Page {page}: {len(activities)} aktivitas ditambahkan.")
+            page += 1  # Lanjut ke halaman berikutnya
+
+        if not all_activities:
+            print("⚠️ Tidak ada aktivitas yang ditemukan setelah 1 Maret 2025.")
             return pd.DataFrame()
 
-        activities = response.json()
-        if not activities:
-            return pd.DataFrame()
+        df = pd.DataFrame(all_activities)
 
-        df = pd.DataFrame(activities)
+        # **Cek Kolom yang Tersedia**
+        print(f"\n📊 Kolom yang tersedia di API: {list(df.columns)}")
 
         # **Filter hanya aktivitas Run, Walk, & Virtual Run**
         if 'sport_type' in df.columns:
@@ -96,7 +105,15 @@ def get_leaderboard():
             )
 
         # **Pilih Kolom yang Dibutuhkan**
-        df = df[['athlete_name', 'distance', 'moving_time', 'total_elevation_gain']]
+        df = df[['athlete_name', 'distance', 'moving_time', 'total_elevation_gain', 'id'] if 'id' in df.columns else ['athlete_name', 'distance', 'moving_time', 'total_elevation_gain']]
+
+        # **Hapus Data Duplikat**
+        if 'id' in df.columns:
+            df = df.drop_duplicates(subset=['id'], keep='first')
+        else:
+            df = df.drop_duplicates(subset=['athlete_name', 'distance', 'moving_time'], keep='first')
+
+        print(f"\n✅ Total data setelah menghapus duplikasi: {len(df)}")
 
         # **Konversi distance ke km dan moving_time ke jam**
         df['distance'] = df['distance'] / 1000
@@ -110,26 +127,21 @@ def get_leaderboard():
             total_elevation_gain=('total_elevation_gain', 'sum')
         ).reset_index()
 
-        # **Tambahkan peserta yang belum memiliki aktivitas**
-        all_participants = pd.DataFrame(get_all_participants(), columns=["athlete_name"])
-        leaderboard_march = all_participants.merge(leaderboard, on='athlete_name', how='outer')
-        leaderboard_march.fillna({'total_activities': 0, 'distance': 0, 'moving_time': 0, 'total_elevation_gain': 0, 'avg_pace': '-'}, inplace=True)
-
         # **Sorting berdasarkan Distance (Descending)**
-        leaderboard_march['total_activities'] = leaderboard_march['total_activities'].astype(int)
-        leaderboard_march = leaderboard_march.sort_values(by="distance", ascending=False).reset_index(drop=True)
+        leaderboard['total_activities'] = leaderboard['total_activities'].astype(int)
+        leaderboard = leaderboard.sort_values(by="distance", ascending=False).reset_index(drop=True)
 
         # **Hitung Average Pace (menit/km)**
-        leaderboard_march['avg_pace'] = (leaderboard_march['moving_time'] * 60) / leaderboard_march['distance']
-        leaderboard_march['avg_pace'] = leaderboard_march['avg_pace'].apply(lambda x: f"{int(x)}:{int((x - int(x)) * 60):02d} min/km" if x > 0 else "--")
+        leaderboard['avg_pace'] = (leaderboard['moving_time'] * 60) / leaderboard['distance']
+        leaderboard['avg_pace'] = leaderboard['avg_pace'].apply(lambda x: f"{int(x)}:{int((x - int(x)) * 60):02d} min/km" if x > 0 else "--")
 
         # **Tambahkan Waktu Update Data**
         last_update = datetime.now().strftime("%d %B %Y, %H:%M:%S")
 
-        # **Cek apakah semua peserta muncul**
-        print(f"\n👥 Total Member Seharusnya: 37, Yang Muncul di Leaderboard: {len(leaderboard_march)}")
+        print("\n🏃‍♂️ Leaderboard Final:")
+        print(leaderboard)
 
-        return leaderboard_march.to_dict(orient='records'), last_update
+        return leaderboard.to_dict(orient='records'), last_update
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
