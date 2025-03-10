@@ -4,11 +4,11 @@ import time
 import os
 import logging
 from flask import Flask, render_template
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = Flask(__name__)
 
-# **Strava API Credentials** (Ganti dengan API Strava kamu)
+# **Strava API Credentials**
 CLIENT_ID = "150348"
 CLIENT_SECRET = "6281b45348ab44737877ebed01117c46ab0068f1"
 REFRESH_TOKEN = "a99f8df8611688ddf512a6b44a7ec0a3570116ee"
@@ -58,8 +58,8 @@ def get_leaderboard():
 
         all_activities = []
         page = 1
-        max_pages = 10  # Batas maksimum pengambilan data agar tidak infinite loop
-        last_data_length = 0  # Untuk cek apakah data berubah
+        max_pages = 10  
+        last_data_length = 0  
 
         while page <= max_pages:
             url = f"https://www.strava.com/api/v3/clubs/1415067/activities"
@@ -68,22 +68,21 @@ def get_leaderboard():
 
             response = requests.get(url, headers=headers, params=params)
             if response.status_code != 200:
-                break  # Hentikan jika gagal mengambil data
+                break  
 
             activities = response.json()
             if not activities:
                 print(f"✅ Page {page}: Tidak ada aktivitas baru, berhenti fetching.")
-                break  # Hentikan jika API tidak mengembalikan aktivitas
+                break  
 
-            # **Cek apakah data sudah sama seperti sebelumnya (duplikasi)**
             if len(activities) == last_data_length:
                 print(f"⚠️ Page {page}: Data tidak bertambah, berhenti fetching.")
                 break
 
             all_activities.extend(activities)
-            last_data_length = len(activities)  # Simpan jumlah terakhir
+            last_data_length = len(activities)  
             print(f"📊 Page {page}: {len(activities)} aktivitas ditambahkan.")
-            page += 1  # Lanjut ke halaman berikutnya
+            page += 1  
 
         if not all_activities:
             print("⚠️ Tidak ada aktivitas yang ditemukan setelah 1 Maret 2025.")
@@ -93,6 +92,11 @@ def get_leaderboard():
 
         # **Cek Kolom yang Tersedia**
         print(f"\n📊 Kolom yang tersedia di API: {list(df.columns)}")
+
+        # **Menampilkan semua jenis Sport Type yang ada di API Club**
+        if 'sport_type' in df.columns:
+            print("\n🔍 Jenis Sport Type yang tersedia dalam dataset dari API Club:")
+            print(df['sport_type'].value_counts())  
 
         # **Filter hanya aktivitas Run, Walk, & Virtual Run**
         if 'sport_type' in df.columns:
@@ -151,10 +155,7 @@ def get_leaderboard():
 @app.route('/')
 def index():
     try:
-        # Log setiap request yang masuk
         app.logger.info("Processing request for /")
-
-        # Panggil fungsi leaderboard
         leaderboard, last_update = get_leaderboard()
 
         if not leaderboard:
@@ -162,10 +163,10 @@ def index():
 
         return render_template('index.html', tables=leaderboard, last_update=last_update)
     except Exception as e:
-        app.logger.error(f"Internal Server Error: {e}")  # Log error di Railway
+        app.logger.error(f"Internal Server Error: {e}")  
         return f"<h2>Internal Server Error: {str(e)}</h2>"
 
 # **Menjalankan Flask App**
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))  # Pastikan pakai port 8080
-    app.run(host="0.0.0.0", port=port, debug=True)  # Harus binding ke 0.0.0.0
+    port = int(os.environ.get("PORT", 8080))  
+    app.run(host="0.0.0.0", port=port, debug=True)  
